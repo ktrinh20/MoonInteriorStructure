@@ -18,7 +18,7 @@ M = 4.8e22  # mass of sphere
 
 err = 0.0024     # error in MoI
 MoI = 0.3547
-R1 = 1565e3 # total radius [m]
+R1 = 1561e3 # total radius [m]
 rhoa = M / (4*pi/3*R1**3)   # bulk (average) density
 rho1 = 1000 # ocean-ice shell density [kg / m^3]
 rho2 = 3300     # silicate mantle density
