@@ -18,7 +18,7 @@ M = 4.8e22  # mass of sphere
 
 err = 0.0024     # error in MoI
 MoI = 0.3547
-R = 1565e3 # total radius [m]
+R = 1561e3 # total radius [m]
 rhow_arr = np.linspace(950, 1050, 101) # density of water [kg m^-3]
 rhoc_arr = np.linspace(3000, 3800, 551) # density of rock-metal core [kg m^-3]
 solution = [0, 0, 0, 0]
