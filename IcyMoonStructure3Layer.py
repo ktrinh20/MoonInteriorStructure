@@ -1,64 +1,70 @@
 '''
 Compute structure of a 3-layer icy moon
-    Need a few equations:
-    - hydrostatic equilibrium
-    - mass conservation
-    
-    Assume we know layer densities. Want to know ocean-ice shell thickness!
     Two knowns: M and MoI
-    Two unknowns: core size, ocean-ice shell thickness
-    
-    note: MoI = 0.3547 +/- 0.0024 (Casajus et al., 2021) or 
+    Two unknowns: core radius, silicate mantle outer radius
+
+    note: MoI = 0.3547 +/- 0.0024 (Casajus et al., 2021) or
                 0.3475 +/- 0.0026 (Anderson et al. 1998)
+                
+Code clean-up by Claude Opus 4.6
+                
+Author: Kevin T. Trinh
 '''
-from math import pi
 import numpy as np
+import matplotlib.pyplot as plt
+from scipy.optimize import brentq
 
-M = 4.8e22  # mass of sphere
+## CONSTRAINTS
+M = 4.8e22   # total mass [kg]
+MoI = 0.3547 # moment of inertia factor
+R = 1561e3   # total radius [m]
 
-err = 0.0024     # error in MoI
-MoI = 0.3547
-R1 = 1561e3 # total radius [m]
-rhoa = M / (4*pi/3*R1**3)   # bulk (average) density
-rho1 = 1000 # ocean-ice shell density [kg / m^3]
-rho2 = 3300     # silicate mantle density
-rho3 = 5150     # core density
+## ASSUMPTIONS
+r3 = R       # ocean-ice shell outer radius [m]
+rho3 = 950   # ocean-ice shell density [kg/m^3]
+rho2 = 3300  # silicate mantle density [kg/m^3]
 
-maxR3 = 1500e3   # max core radius tested [m]
-R3 = 1e3
-dr3 = 5e2   # increase in tested core size
-m_arr = [] # make sure that mass makes sense [kg]
-R3_arr = []   # store tested metallic core radius [m]
-R2_arr = []   # store silicate mantle radius [m]
-h_arr = []  # store ocean-ice shell thickness (R1 - R2_arr)
-MoI_arr = []    # store calculated MoI
-while R3 <= maxR3:
-    # compute ocean-ice shell thickness to satisfy mass constraint
-    R3_arr.append(R3)
-    m3 = rho3 * 4*pi/3*R3**3    # metallic core mass [kg]
-    r2 = ((3*(M-m3)/(4*pi) + rho2*R3**3 - rho1*R1**3)/(rho2-rho1))**(1/3)
-    R2_arr.append(r2)
-    h_arr.append(R1 - r2)
-    
-    # check mass
-    m_arr.append(4*pi/3 * (rho3*R3**3 + rho2*(r2**3-R3**3) + rho1*(R1**3-r2**3)))
-    
-    # compute MoI using Eq. 6 in Schubert et al. (2009)
-    moi = (2/5)*(rho1/rhoa + ((rho3-rho2)/rhoa)*(R3/R1)**5 + 
-                 ((rho2-rho1)/rhoa)*(r2/R1)**5)
-    MoI_arr.append(moi)
-    R3 += dr3
-    
-# find structure that leads to lowest error in MoI
-MoI_arr = np.asarray(MoI_arr)
-diff_arr = np.absolute(MoI_arr - MoI)
-index = diff_arr.argmin()
-within_error = abs(MoI_arr[index] - MoI) <= err
-print("MoI error = ", (MoI_arr[index] - MoI) / MoI * 100, " %")
-print("MoI result = ", MoI_arr[index])
-print("Within MoI error? ", within_error)
-print("Mass error = ", (m_arr[index] - M)/M * 100, " %")
-print("Core radius = ", R3_arr[index] / 1e3, " km")
-print("Core mass fraction = ", rho3*4*pi/3*R3_arr[index]**3 / M, " %")
-print("Ocean-ice shell thickness = ", h_arr[index] / 1e3, " km")
-print("H2O mass fraction = ", rho1*4*pi/3*(R1**3-R2_arr[index]**3)/M, " %")
+## FUNCTIONS
+def calc_r1(r2, r3, rho1, rho2, rho3):
+    val = (3*M/4/np.pi - (r3**3 - r2**3)*rho3 - r2**3*rho2) / (rho1 - rho2)
+    if val < 0:
+        return np.nan  # unphysical: no room for a core of this density
+    return val**(1/3)
+
+def calc_MOI(r1, r2, r3, rho1, rho2, rho3):
+    return 8*np.pi/15/M/R/R * (r1**5*rho1 + (r2**5 - r1**5)*rho2 + (r3**5 - r2**5)*rho3)
+
+def getStructure(r3, rho1, rho2, rho3):
+    '''Calculate an interior structure by assuming layer densities.'''
+    def moi_residual(r2):
+        r1 = calc_r1(r2, r3, rho1, rho2, rho3)
+        if np.isnan(r1) or r1 <= 0 or r1 >= r2:
+            return np.nan
+        return calc_MOI(r1, r2, r3, rho1, rho2, rho3) - MoI
+
+    test_r2_arr = np.linspace(1e3, r3 - 1e3, 2000)
+    residuals = np.array([moi_residual(r2) for r2 in test_r2_arr])
+    valid = ~np.isnan(residuals)
+    sign_changes = np.where(np.diff(np.sign(residuals[valid])))[0]
+    if len(sign_changes) == 0:
+        return np.nan, np.nan
+    idx = sign_changes[0]
+    valid_r2 = test_r2_arr[valid]
+    r2 = brentq(moi_residual, valid_r2[idx], valid_r2[idx + 1])
+    r1 = calc_r1(r2, r3, rho1, rho2, rho3)
+    return r1, r2
+
+
+## GET SOLUTION
+n = 100
+rho1_arr = np.linspace(4840, 8000, n) # metal core density [kg/m^3]
+r1_arr = np.nan * np.zeros(n)
+r2_arr = np.nan * np.zeros(n)
+
+for i in range(n):
+    r1_arr[i], r2_arr[i] = getStructure(r3, rho1_arr[i], rho2, rho3)
+
+plt.figure()
+plt.plot(r1_arr/1e3, rho1_arr)
+plt.xlabel('Metal core radius (km)')
+plt.ylabel(r'Metal core density ($kg/m^3$)')
